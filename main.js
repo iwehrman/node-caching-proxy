@@ -7,6 +7,15 @@ var http = require("http"),
 function requestListener(serverReq, serverRes) {
     "use strict";
 
+    function setServerResponseHeaders(headers) {
+        var header;
+        for (header in headers) {
+            if (headers.hasOwnProperty(header)) {
+                serverRes.setHeader(header, headers[header]);
+            }
+        }
+    }
+    
     var origHost = serverReq.headers.host,
         index = origHost.indexOf(".localhost");
     
@@ -16,30 +25,54 @@ function requestListener(serverReq, serverRes) {
     }
     
     var host = origHost.substring(0, index),
-        filename = encodeURIComponent(host + serverReq.url);
+        filename = encodeURIComponent(host + serverReq.url),
+        dataname = filename + ".data",
+        headername = filename + ".headers";
     
-    fs.exists(filename, function (exists) {
+    fs.exists(headername, function (exists) {
         if (exists) {
-            util.log("reading: " + filename);
-            fs.createReadStream(filename).pipe(serverRes);
+            var dataFile = fs.createReadStream(dataname);
+            
+            util.log("Reading header file: " + headername);
+            fs.readFile(headername, { encoding: "utf8" }, function (err, headerObj) {
+                if (err) {
+                    util.log("Error reading headers: " + err);
+                }
+                
+                var headers = JSON.parse(headerObj);
+                setServerResponseHeaders(headers);
+                    
+                util.log("Reading data file: " + dataname);
+                dataFile.pipe(serverRes);
+                dataFile.on("end", function () {
+                    util.log("Finished writing response: " + host + serverReq.url);
+                });
+            });
         } else {
             http.get({host: host, path: serverReq.url}, function (clientRes) {
-                var file = fs.createWriteStream(filename, {flags: "w"});
+                var datafile = fs.createWriteStream(dataname, {flags: "w"}),
+                    headers = {
+                        "Content-Type": clientRes.headers["content-type"],
+                        "Access-Control-Allow-Origin": clientRes.headers["access-control-allow-origin"]
+                    };
                 
-                util.log("request: " + host + serverReq.url);
-                util.log("file: " + filename);
+                setServerResponseHeaders(headers);
                 
-                clientRes.pipe(file);
+                util.log("Requesting: " + host + serverReq.url);
+                util.log("Writing: " + dataname);
+                clientRes.pipe(datafile);
                 clientRes.pipe(serverRes);
+                clientRes.on("end", function () {
+                    util.log("Finished writing file and response: " + filename);
+                });
                 
-                file.on("end", function () {
-                    util.log("finished writing file: " + filename);
+                fs.writeFile(headername, JSON.stringify(headers), function (err) {
+                    if (err) {
+                        util.log("Error writing headers: " + err);
+                    }
                 });
             });
         }
-        serverRes.on("end", function () {
-            util.log("finished writing response: " + host + serverReq.url);
-        });
     });
 }
 
