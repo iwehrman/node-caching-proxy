@@ -1,8 +1,8 @@
 /*jslint vars: true, plusplus: true, node: true, nomen: true, indent: 4, maxerr: 50 */
 
-var http = require("http"),
-    fs = require("fs"),
-    util = require("util");
+var http    = require("http"),
+    fs      = require("fs"),
+    util    = require("util");
 
 function requestListener(serverReq, serverRes) {
     "use strict";
@@ -33,22 +33,17 @@ function requestListener(serverReq, serverRes) {
         if (exists) {
             var dataFile = fs.createReadStream(dataname);
             
-            util.log("Reading header file: " + headername);
             fs.readFile(headername, { encoding: "utf8" }, function (err, headerObj) {
                 if (err) {
                     util.log("Error reading headers: " + err);
+                } else {
+                    var headers = JSON.parse(headerObj);
+                    setServerResponseHeaders(headers);
+                    dataFile.pipe(serverRes);
                 }
-                
-                var headers = JSON.parse(headerObj);
-                setServerResponseHeaders(headers);
-                    
-                util.log("Reading data file: " + dataname);
-                dataFile.pipe(serverRes);
-                dataFile.on("end", function () {
-                    util.log("Finished writing response: " + host + serverReq.url);
-                });
             });
         } else {
+            util.log("Requesting: " + host + serverReq.url);
             http.get({host: host, path: serverReq.url}, function (clientRes) {
                 var datafile = fs.createWriteStream(dataname, {flags: "w"}),
                     headers = {
@@ -57,20 +52,25 @@ function requestListener(serverReq, serverRes) {
                     };
                 
                 setServerResponseHeaders(headers);
-                
-                util.log("Requesting: " + host + serverReq.url);
-                util.log("Writing: " + dataname);
                 clientRes.pipe(datafile);
                 clientRes.pipe(serverRes);
                 clientRes.on("end", function () {
-                    util.log("Finished writing file and response: " + filename);
+                    util.log("Wrote data: " + dataname);
                 });
                 
                 fs.writeFile(headername, JSON.stringify(headers), function (err) {
                     if (err) {
                         util.log("Error writing headers: " + err);
+                    } else {
+                        util.log("Wrote headers: " + headers);
                     }
                 });
+            }).on("error", function (err) {
+                util.log("HTTP error: " + err);
+                if (!serverRes.headersSent) {
+                    serverRes.writeHead("500");
+                }
+                serverRes.end();
             });
         }
     });
