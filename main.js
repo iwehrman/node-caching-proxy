@@ -62,7 +62,7 @@ function requestListener(serverReq, serverRes) {
                     if (err) {
                         util.log("Error writing headers: " + err);
                     } else {
-                        util.log("Wrote headers: " + headers);
+                        util.log("Wrote headers: " + headername);
                     }
                 });
             }).on("error", function (err) {
